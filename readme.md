@@ -1,3 +1,4 @@
+```
 ConnectSphere/
 ├── client/                     # Frontend (React, Vite, Material-UI)
 │   ├── src/
@@ -13,3 +14,4 @@ ConnectSphere/
 │   ├── server.js
 │   └── package.json
 ├── README.md
+```
