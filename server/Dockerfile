@@ -1,20 +1,15 @@
-# Use official Node.js LTS image
-FROM node:18-alpine
-
-# Set working directory
+FROM node:18-alpine AS dependencies
 WORKDIR /app
-
-# Copy package.json and package-lock.json
-COPY package.json ./
-
-# Install dependencies
-RUN npm install
-
-# Copy the rest of the application code
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+FROM node:18-alpine AS release
+WORKDIR /app
+ENV NODE_ENV=production
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
-
-# Expose port for Express/WebSocket
+RUN chown -R appuser:appgroup /app
+USER appuser
 EXPOSE 5000
 
-# Start the server
-CMD ["npm", "start"]
+CMD ["node", "server.js"]
