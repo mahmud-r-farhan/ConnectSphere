@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Typography,
@@ -17,7 +18,8 @@ import {
 } from '@mui/icons-material';
 import { aboutStyles } from '../style/aboutStyles';
 
-const About = ({ setInCall, setUsername }) => {
+const About = () => {
+  const navigate = useNavigate();
   const features = [
     {
       icon: <People sx={{ fontSize: 32, color: 'blue.300' }} />,
@@ -37,8 +39,7 @@ const About = ({ setInCall, setUsername }) => {
   ];
 
   const handleStartChat = () => {
-    setUsername('Guest'); // Optional: Set a default username or prompt for input
-    setInCall(true);
+    navigate('/');
   };
 
   return (

@@ -1,42 +1,63 @@
 import React, { useState, useEffect } from 'react';
-import { Button, IconButton, Typography, Box, CircularProgress, Fade } from '@mui/material';
-import {
-  Videocam,
-  Mic,      
-  MicOff,  
-  SkipNext, 
-  CallEnd, 
-} from '@mui/icons-material';
-import { useVideoCall } from './useVideoCall';
+import { useNavigate } from 'react-router-dom';
+import { Button, IconButton, Typography, Box, CircularProgress, Fade, Snackbar } from '@mui/material';
+import { Videocam, Mic, MicOff, SkipNext, CallEnd, Report } from '@mui/icons-material';
+import { useVideoCall } from '../hooks/useVideoCall';
 import { videoCallStyles } from '../style/videoCallStyles';
 
-const VideoCall = ({ username, setInCall }) => {
+const VideoCall = ({ username, preferences }) => {
+  const navigate = useNavigate();
   const {
     micEnabled,
     callStatus,
     remoteUsername,
+    queueStatus,
+    notification,
     localVideoRef,
     remoteVideoRef,
     toggleMic,
     handleNext,
-    handleEnd,
-  } = useVideoCall(username, setInCall);
+    handleReport
+  } = useVideoCall(username, preferences);
 
   const [connectionTime, setConnectionTime] = useState(0);
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
 
   useEffect(() => {
-    if (callStatus === 'connected') {
-      const timer = setInterval(() => {
-        setConnectionTime((prev) => prev + 1);
-      }, 1000);
-      return () => clearInterval(timer);
+    if (notification) {
+      setSnackbarOpen(true);
     }
+  }, [notification]);
+
+  useEffect(() => {
+    let timer;
+    if (callStatus === 'connected') {
+      timer = setInterval(() => setConnectionTime((prev) => prev + 1), 1000);
+    } else {
+      setConnectionTime(0);
+    }
+    return () => clearInterval(timer);
   }, [callStatus]);
 
   const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
+    const secs = (seconds % 60).toString().padStart(2, '0');
+    return `${mins}:${secs}`;
+  };
+
+  const handleEnd = () => {
+    sessionStorage.removeItem('username');
+    navigate('/');
+  };
+
+  const handleSnackbarClose = () => setSnackbarOpen(false);
+
+  const getSnackbarColor = () => {
+    switch (notification?.type) {
+      case 'success': return '#4ade80'; // green
+      case 'error': return '#f87171'; // red
+      default: return '#6b7280'; // gray for info
+    }
   };
 
   return (
@@ -53,7 +74,11 @@ const VideoCall = ({ username, setInCall }) => {
           <Typography variant="body2" sx={videoCallStyles.headerSubtitle}>
             {callStatus === 'connected'
               ? `Connected: ${formatTime(connectionTime)}`
-              : 'Connecting...'}
+              : callStatus === 'searching'
+              ? `Searching... ${queueStatus ? `(Queue: ${queueStatus.position})` : ''}`
+              : callStatus === 'connecting'
+              ? 'Connecting to peer...'
+              : 'Initializing...'}
           </Typography>
           <Box sx={videoCallStyles.userInfo}>
             <Typography variant="body1" sx={videoCallStyles.userText}>
@@ -96,20 +121,21 @@ const VideoCall = ({ username, setInCall }) => {
         {/* Remote Video */}
         <Fade in timeout={1000}>
           <Box sx={videoCallStyles.videoContainer}>
-            {callStatus === 'searching' ? (
+            {callStatus === 'searching' || callStatus === 'initializing' ? (
               <Box sx={videoCallStyles.searchingContainer}>
                 <Box sx={videoCallStyles.spinnerWrapper}>
                   <CircularProgress sx={{ color: '#3b82f6' }} size={60} />
-                  <CircularProgress
-                    sx={{ color: '#ec4899', position: 'absolute', animation: 'spin 2s linear infinite' }}
-                    size={60}
-                    variant="determinate"
-                    value={75}
-                  />
                 </Box>
                 <Typography sx={videoCallStyles.searchingText}>
-                  Finding your next connection...
+                  {callStatus === 'initializing' 
+                    ? 'Initializing connection...' 
+                    : 'Finding your next connection...'}
                 </Typography>
+                {queueStatus && (
+                  <Typography sx={videoCallStyles.searchingText}>
+                    Estimated wait: {queueStatus.estimatedWait}s
+                  </Typography>
+                )}
                 <Box sx={videoCallStyles.bounceDots}>
                   <Box sx={{ ...videoCallStyles.bounceDot, animationDelay: '0s' }} />
                   <Box sx={{ ...videoCallStyles.bounceDot, animationDelay: '0.1s' }} />
@@ -156,21 +182,48 @@ const VideoCall = ({ username, setInCall }) => {
         <Button
           variant="contained"
           onClick={handleNext}
-          startIcon={<SkipNext sx={{ fontSize: 20 }} />}
+          startIcon={<SkipNext />}
           sx={videoCallStyles.actionButton}
+          disabled={callStatus !== 'connected'}
         >
           Next
         </Button>
         <Button
           variant="contained"
+          color="warning"
+          onClick={handleReport}
+          startIcon={<Report />}
+          sx={videoCallStyles.actionButton}
+          disabled={callStatus !== 'connected'}
+        >
+          Report
+        </Button>
+        <Button
+          variant="contained"
           color="secondary"
           onClick={handleEnd}
-          startIcon={<CallEnd sx={{ fontSize: 20 }} />}
+          startIcon={<CallEnd />}
           sx={videoCallStyles.actionButton}
         >
           End
         </Button>
       </Box>
+
+      {/* Snackbar for notifications */}
+      <Snackbar
+        open={snackbarOpen}
+        autoHideDuration={6000}
+        onClose={handleSnackbarClose}
+        message={notification?.message}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        sx={{
+          '& .MuiSnackbarContent-root': {
+            backgroundColor: getSnackbarColor(),
+            color: 'white',
+            fontWeight: 'medium'
+          }
+        }}
+      />
     </Box>
   );
 };

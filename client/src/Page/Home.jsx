@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { TextField, Button, Typography, Box, Card, CardContent } from '@mui/material';
 
-function Home({ setUsername, setInCall }) {
+function HomePage() {
   const [inputName, setInputName] = useState('');
+  const navigate = useNavigate();
 
   const handleStart = () => {
     if (inputName.trim()) {
-      setUsername(inputName.trim());
-      setInCall(true);
+      sessionStorage.setItem('username', inputName.trim());
+      navigate('/call');
     }
   };
 
@@ -16,10 +18,12 @@ function Home({ setUsername, setInCall }) {
       <Card sx={{ minWidth: 275, maxWidth: 400, mt: 5 }}>
         <CardContent>
           <Typography variant="h5" component="div" gutterBottom>
-            Get Started
+            <Link to="/about" style={{ textDecoration: 'none', color: 'inherit', }}>
+            ConnectSphere
+            </Link>
           </Typography>
           <Typography sx={{ mb: 1.5 }} color="text.secondary">
-            Enter your name to start chatting with a random person.
+            Enter a display name to start chatting with people around the world.
           </Typography>
           <TextField
             label="Enter your name"
@@ -40,7 +44,7 @@ function Home({ setUsername, setInCall }) {
             fullWidth
             sx={{ mt: 2 }}
           >
-            Start Call
+            Start Calling
           </Button>
         </CardContent>
       </Card>
@@ -48,4 +52,4 @@ function Home({ setUsername, setInCall }) {
   );
 }
 
-export default Home;
+export default HomePage;

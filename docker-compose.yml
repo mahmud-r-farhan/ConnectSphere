@@ -5,14 +5,15 @@ services:
     build:
       context: ./client
       dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL}
     ports:
-      - "3000:3000"
-    environment:
-      - VITE_APP_BACKEND_URL=http://backend:5000
-    depends_on:
-      - backend
+      - "80:80"
+    restart: unless-stopped
     networks:
       - video-call-network
+    depends_on:
+      - backend
 
   backend:
     build:
@@ -20,6 +21,9 @@ services:
       dockerfile: Dockerfile
     ports:
       - "5000:5000"
+    restart: unless-stopped
+    env_file:
+      - ./server/.env
     networks:
       - video-call-network
 

@@ -1,23 +1,24 @@
-# Use official Node.js LTS image
-FROM node:18-alpine
-
-# Set working directory
+FROM node:18-alpine AS build
 WORKDIR /app
 
-# Copy package.json and package-lock.json
-COPY package.json ./
-
-# Install dependencies
+COPY package.json package-lock.json ./
 RUN npm install
 
-# Copy the rest of the application code
+# Copy the rest of the source code
 COPY . .
 
-# Build the Vite app
+ARG VITE_API_URL
+ENV VITE_API_URL=${VITE_API_URL}
+
+
 RUN npm run build
+FROM nginx:stable-alpine
+WORKDIR /usr/share/nginx/html
 
-# Expose port for Vite
-EXPOSE 3000
 
-# Start the Vite server
-CMD ["npm", "run", "dev"]
+RUN rm -rf ./*
+
+COPY --from=build /app/dist .
+COPY nginx/default.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
