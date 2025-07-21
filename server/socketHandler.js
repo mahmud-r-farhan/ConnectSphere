@@ -108,25 +108,35 @@ class SocketHandler {
     const user = userManager.getUser(socket.id);
     if (!user) return;
     
-    socket.to(to).emit('offer', { offer, from: socket.id, fromUsername: user.username });
+    socket.to(to).emit('offer', { 
+      offer, 
+      from: socket.id, 
+      fromUsername: user.username 
+    });
   }
 
   handleAnswer(socket, { answer, to }) {
     if (!this.validatePeerConnection(socket.id, to)) return;
-    socket.to(to).emit('answer', { answer, from: socket.id });
+    socket.to(to).emit('answer', { 
+      answer, 
+      from: socket.id 
+    });
+  }
+
+  handleCallAccepted(socket) {
+    const user = userManager.getUser(socket.id);
+    if (!user || !user.peerId) return;
+    
+    userManager.activateConnection(socket.id);
+    socket.to(user.peerId).emit('call-accepted', { from: socket.id });
   }
 
   handleIceCandidate(socket, { candidate, to }) {
     if (!this.validatePeerConnection(socket.id, to)) return;
-    socket.to(to).emit('ice-candidate', { candidate, from: socket.id });
-  }
-
-  handleCallAccepted(socket) {
-    userManager.activateConnection(socket.id);
-    const user = userManager.getUser(socket.id);
-    if (user && user.peerId) {
-      socket.to(user.peerId).emit('call-accepted', { from: socket.id });
-    }
+    socket.to(to).emit('ice-candidate', { 
+      candidate, 
+      from: socket.id 
+    });
   }
 
   handleCallRejected(socket, data) {

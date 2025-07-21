@@ -39,31 +39,47 @@ export const useVideoCall = (username, preferences) => {
   }, []);
 
   const createPeerConnection = useCallback(() => {
-    if (peerConnectionRef.current) return peerConnectionRef.current;
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
 
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    const pc = new RTCPeerConnection({ 
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+      ],
+      iceCandidatePoolSize: 10
+    });
 
     pc.onicecandidate = (event) => {
       if (event.candidate && peerIdRef.current) {
-        socketRef.current.emit('ice-candidate', { candidate: event.candidate, to: peerIdRef.current });
-      }
-    };
-
-    pc.ontrack = (event) => {
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = event.streams[0];
+        socketRef.current?.emit('ice-candidate', { 
+          candidate: event.candidate, 
+          to: peerIdRef.current 
+        });
       }
     };
 
     pc.oniceconnectionstatechange = () => {
-      if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+      console.log('ICE Connection State:', pc.iceConnectionState);
+      if (['disconnected', 'failed', 'closed'].includes(pc.iceConnectionState)) {
         setNotification({ message: 'Connection lost. Finding a new partner...', type: 'info' });
         resetCallState();
       }
     };
-    
+
+    pc.ontrack = (event) => {
+      console.log('Received remote track:', event.streams[0]);
+      if (remoteVideoRef.current && event.streams[0]) {
+        remoteVideoRef.current.srcObject = event.streams[0];
+      }
+    };
+
+    // Add local tracks immediately if available
     if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((track) => {
+      localStreamRef.current.getTracks().forEach(track => {
         pc.addTrack(track, localStreamRef.current);
       });
     }
@@ -71,39 +87,6 @@ export const useVideoCall = (username, preferences) => {
     peerConnectionRef.current = pc;
     return pc;
   }, [resetCallState]);
-
-  useEffect(() => {
-    const initialize = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        localStreamRef.current = stream;
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = stream;
-        }
-
-        socketRef.current = io(SOCKET_SERVER_URL, {
-          reconnectionAttempts: 5,
-          reconnectionDelay: 2000,
-          auth: { username, preferences } 
-        });
-        
-
-      } catch (err) {
-        console.error("MediaStream Error:", err);
-        setNotification({ message: 'Camera/Mic access denied. Please check permissions.', type: 'error' });
-        setCallStatus('error');
-      }
-    };
-
-    initialize();
-
-    return () => {
-      localStreamRef.current?.getTracks().forEach((track) => track.stop());
-      socketRef.current?.disconnect();
-      if (peerConnectionRef.current) peerConnectionRef.current.close();
-    };
-  }, [username, preferences]); 
-
 
   useEffect(() => {
     const socket = socketRef.current;
@@ -131,40 +114,63 @@ export const useVideoCall = (username, preferences) => {
 
     // WebRTC Signaling
     socket.on('peer-found', async ({ peerId, peerUsername }) => {
-      setCallStatus('connecting');
-      setRemoteUsername(peerUsername);
-      peerIdRef.current = peerId;
-      const pc = createPeerConnection();
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      socket.emit('offer', { offer, to: peerId });
+      try {
+        setCallStatus('connecting');
+        setRemoteUsername(peerUsername);
+        peerIdRef.current = peerId;
+        
+        const pc = createPeerConnection();
+        const offer = await pc.createOffer({
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: true
+        });
+        await pc.setLocalDescription(offer);
+        socket.emit('offer', { offer, to: peerId });
+      } catch (err) {
+        console.error('Error creating offer:', err);
+        resetCallState();
+      }
     });
 
     socket.on('offer', async ({ offer, from, fromUsername }) => {
-      setCallStatus('connecting');
-      setRemoteUsername(fromUsername);
-      peerIdRef.current = from;
-      const pc = createPeerConnection();
-      await pc.setRemoteDescription(new RTCSessionDescription(offer));
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      socket.emit('answer', { answer, to: from });
-    });
-
-    socket.on('answer', async ({ answer }) => {
-      await peerConnectionRef.current?.setRemoteDescription(new RTCSessionDescription(answer));
-      setCallStatus('connected'); // Caller is now connected
-    });
-    
-    socket.on('call-accepted', () => {
-        setCallStatus('connected');
-    });
-
-    socket.on('ice-candidate', async ({ candidate }) => {
       try {
-        await peerConnectionRef.current?.addIceCandidate(new RTCIceCandidate(candidate));
+        setCallStatus('connecting');
+        setRemoteUsername(fromUsername);
+        peerIdRef.current = from;
+        
+        const pc = createPeerConnection();
+        await pc.setRemoteDescription(new RTCSessionDescription(offer));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        socket.emit('answer', { answer, to: from });
+        socket.emit('call-accepted');
       } catch (err) {
-        console.error("Error adding ICE candidate:", err);
+        console.error('Error handling offer:', err);
+        resetCallState();
+      }
+    });
+
+    socket.on('answer', async ({ answer, from }) => {
+      try {
+        if (!peerConnectionRef.current) {
+          throw new Error('No peer connection exists');
+        }
+        await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+        socket.emit('call-accepted');
+        setCallStatus('connected');
+      } catch (err) {
+        console.error('Error handling answer:', err);
+        resetCallState();
+      }
+    });
+
+    socket.on('ice-candidate', async ({ candidate, from }) => {
+      try {
+        if (peerConnectionRef.current && from === peerIdRef.current) {
+          await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+        }
+      } catch (err) {
+        console.error('Error adding ICE candidate:', err);
       }
     });
 
