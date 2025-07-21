@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, IconButton, Typography, Box, CircularProgress, Fade, Snackbar } from '@mui/material';
+import { Button, IconButton, Typography, Box, CircularProgress, Fade, Snackbar, Tooltip } from '@mui/material';
 import { Videocam, Mic, MicOff, SkipNext, CallEnd, Report } from '@mui/icons-material';
 import { useVideoCall } from '../hooks/useVideoCall';
 import { videoCallStyles } from '../style/videoCallStyles';
@@ -17,7 +17,7 @@ const VideoCall = ({ username, preferences }) => {
     remoteVideoRef,
     toggleMic,
     handleNext,
-    handleReport
+    handleReport,
   } = useVideoCall(username, preferences);
 
   const [connectionTime, setConnectionTime] = useState(0);
@@ -54,15 +54,14 @@ const VideoCall = ({ username, preferences }) => {
 
   const getSnackbarColor = () => {
     switch (notification?.type) {
-      case 'success': return '#4ade80'; // green
-      case 'error': return '#f87171'; // red
-      default: return '#6b7280'; // gray for info
+      case 'success': return '#4ade80';
+      case 'error': return '#f87171';
+      default: return '#6b7280';
     }
   };
 
   return (
     <Box sx={videoCallStyles.container}>
-      {/* Header */}
       <Fade in timeout={600}>
         <Box sx={videoCallStyles.header}>
           <Box sx={videoCallStyles.logoContainer}>
@@ -93,16 +92,14 @@ const VideoCall = ({ username, preferences }) => {
         </Box>
       </Fade>
 
-      {/* Video Grid */}
       <Box sx={videoCallStyles.videoGrid}>
-        {/* Local Video */}
         <Fade in timeout={800}>
           <Box sx={videoCallStyles.videoContainer}>
             <video
               ref={localVideoRef}
               autoPlay
               muted
-              style={videoCallStyles.localVideo}
+              sx={videoCallStyles.localVideo}
             />
             <Box sx={videoCallStyles.videoLabel}>
               <Typography variant="body2" sx={videoCallStyles.labelText}>
@@ -118,7 +115,6 @@ const VideoCall = ({ username, preferences }) => {
           </Box>
         </Fade>
 
-        {/* Remote Video */}
         <Fade in timeout={1000}>
           <Box sx={videoCallStyles.videoContainer}>
             {callStatus === 'searching' || callStatus === 'initializing' ? (
@@ -127,8 +123,8 @@ const VideoCall = ({ username, preferences }) => {
                   <CircularProgress sx={{ color: '#3b82f6' }} size={60} />
                 </Box>
                 <Typography sx={videoCallStyles.searchingText}>
-                  {callStatus === 'initializing' 
-                    ? 'Initializing connection...' 
+                  {callStatus === 'initializing'
+                    ? 'Initializing connection...'
                     : 'Finding your next connection...'}
                 </Typography>
                 {queueStatus && (
@@ -147,7 +143,7 @@ const VideoCall = ({ username, preferences }) => {
                 <video
                   ref={remoteVideoRef}
                   autoPlay
-                  style={videoCallStyles.videoElement}
+                  sx={videoCallStyles.videoElement}
                 />
                 <Box sx={videoCallStyles.videoLabel}>
                   <Typography variant="body2" sx={videoCallStyles.labelText}>
@@ -160,7 +156,6 @@ const VideoCall = ({ username, preferences }) => {
         </Fade>
       </Box>
 
-      {/* Controls */}
       <Box sx={videoCallStyles.controlsContainer}>
         <IconButton
           onClick={toggleMic}
@@ -179,25 +174,33 @@ const VideoCall = ({ username, preferences }) => {
             <MicOff sx={{ fontSize: 24, color: 'white' }} />
           )}
         </IconButton>
-        <Button
-          variant="contained"
-          onClick={handleNext}
-          startIcon={<SkipNext />}
-          sx={videoCallStyles.actionButton}
-          disabled={callStatus !== 'connected'}
-        >
-          Next
-        </Button>
-        <Button
-          variant="contained"
-          color="warning"
-          onClick={handleReport}
-          startIcon={<Report />}
-          sx={videoCallStyles.actionButton}
-          disabled={callStatus !== 'connected'}
-        >
-          Report
-        </Button>
+        <Tooltip title={callStatus !== 'connected' ? 'Connect to a peer to enable' : ''}>
+          <span>
+            <Button
+              variant="contained"
+              onClick={handleNext}
+              startIcon={<SkipNext />}
+              sx={videoCallStyles.actionButton}
+              disabled={callStatus !== 'connected'}
+            >
+              Next
+            </Button>
+          </span>
+        </Tooltip>
+        <Tooltip title={callStatus !== 'connected' ? 'Connect to a peer to enable' : ''}>
+          <span>
+            <Button
+              variant="contained"
+              color="warning"
+              onClick={handleReport}
+              startIcon={<Report />}
+              sx={videoCallStyles.actionButton}
+              disabled={callStatus !== 'connected'}
+            >
+              Report
+            </Button>
+          </span>
+        </Tooltip>
         <Button
           variant="contained"
           color="secondary"
@@ -209,10 +212,9 @@ const VideoCall = ({ username, preferences }) => {
         </Button>
       </Box>
 
-      {/* Snackbar for notifications */}
       <Snackbar
         open={snackbarOpen}
-        autoHideDuration={6000}
+        autoHideDuration={notification?.type === 'error' ? 10000 : 6000}
         onClose={handleSnackbarClose}
         message={notification?.message}
         anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
@@ -220,8 +222,8 @@ const VideoCall = ({ username, preferences }) => {
           '& .MuiSnackbarContent-root': {
             backgroundColor: getSnackbarColor(),
             color: 'white',
-            fontWeight: 'medium'
-          }
+            fontWeight: 'medium',
+          },
         }}
       />
     </Box>

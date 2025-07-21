@@ -2,17 +2,25 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { io } from 'socket.io-client';
 
 const SOCKET_SERVER_URL = import.meta.env.VITE_API_URL;
-const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun2.l.google.com:19302' },
+  // Add TURN server if available:
+  // {
+  //   urls: 'turn:your.turn.server:3478',
+  //   username: 'turn_username',
+  //   credential: 'turn_password',
+  // },
+];
 
 export const useVideoCall = (username, preferences) => {
-  // State for UI
-  const [callStatus, setCallStatus] = useState('initializing'); 
+  const [callStatus, setCallStatus] = useState('initializing');
   const [remoteUsername, setRemoteUsername] = useState('');
   const [micEnabled, setMicEnabled] = useState(true);
-  const [notification, setNotification] = useState(null); 
+  const [notification, setNotification] = useState(null);
   const [queueStatus, setQueueStatus] = useState(null);
 
-  // Refs for internal state and elements
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const socketRef = useRef(null);
@@ -20,12 +28,11 @@ export const useVideoCall = (username, preferences) => {
   const localStreamRef = useRef(null);
   const peerIdRef = useRef(null);
 
-
   const resetCallState = useCallback((isSearchingNext = true) => {
     setCallStatus(isSearchingNext ? 'searching' : 'idle');
     setRemoteUsername('');
     peerIdRef.current = null;
-    
+
     if (remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = null;
     }
@@ -44,20 +51,16 @@ export const useVideoCall = (username, preferences) => {
       peerConnectionRef.current = null;
     }
 
-    const pc = new RTCPeerConnection({ 
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-      ],
-      iceCandidatePoolSize: 10
+    const pc = new RTCPeerConnection({
+      iceServers: ICE_SERVERS,
+      iceCandidatePoolSize: 10,
     });
 
     pc.onicecandidate = (event) => {
       if (event.candidate && peerIdRef.current) {
-        socketRef.current?.emit('ice-candidate', { 
-          candidate: event.candidate, 
-          to: peerIdRef.current 
+        socketRef.current?.emit('ice-candidate', {
+          candidate: event.candidate,
+          to: peerIdRef.current,
         });
       }
     };
@@ -77,7 +80,6 @@ export const useVideoCall = (username, preferences) => {
       }
     };
 
-    // Add local tracks immediately if available
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => {
         pc.addTrack(track, localStreamRef.current);
@@ -89,40 +91,73 @@ export const useVideoCall = (username, preferences) => {
   }, [resetCallState]);
 
   useEffect(() => {
+    const initializeLocalStream = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: true,
+        });
+        localStreamRef.current = stream;
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = stream;
+        }
+      } catch (err) {
+        console.error('Error accessing media devices:', err);
+        setNotification({ message: 'Failed to access camera or microphone.', type: 'error' });
+        setCallStatus('error');
+      }
+    };
+
+    initializeLocalStream();
+
+    return () => {
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => track.stop());
+        localStreamRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    socketRef.current = io(SOCKET_SERVER_URL, {
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+    });
+
     const socket = socketRef.current;
-    if (!socket) return;
-    
-    // Connection events
+
     socket.on('connect', () => {
       setNotification(null);
       socket.emit('join', { username, preferences });
     });
+
     socket.on('connect_error', () => {
       setNotification({ message: 'Connecting to server...', type: 'error' });
     });
 
-    // Joining and Searching
     socket.on('join-success', () => {
-        setCallStatus('searching');
-        socket.emit('search');
+      setCallStatus('searching');
+      socket.emit('search');
     });
+
     socket.on('join-error', ({ message }) => {
-        setNotification({ message, type: 'error' });
-        setCallStatus('error');
+      setNotification({ message, type: 'error' });
+      setCallStatus('error');
     });
+
     socket.on('queue-status', (status) => setQueueStatus(status));
 
-    // WebRTC Signaling
     socket.on('peer-found', async ({ peerId, peerUsername }) => {
       try {
         setCallStatus('connecting');
         setRemoteUsername(peerUsername);
         peerIdRef.current = peerId;
-        
+
         const pc = createPeerConnection();
         const offer = await pc.createOffer({
           offerToReceiveAudio: true,
-          offerToReceiveVideo: true
+          offerToReceiveVideo: true,
         });
         await pc.setLocalDescription(offer);
         socket.emit('offer', { offer, to: peerId });
@@ -137,7 +172,7 @@ export const useVideoCall = (username, preferences) => {
         setCallStatus('connecting');
         setRemoteUsername(fromUsername);
         peerIdRef.current = from;
-        
+
         const pc = createPeerConnection();
         await pc.setRemoteDescription(new RTCSessionDescription(offer));
         const answer = await pc.createAnswer();
@@ -164,6 +199,10 @@ export const useVideoCall = (username, preferences) => {
       }
     });
 
+    socket.on('call-accepted', () => {
+      setCallStatus('connected');
+    });
+
     socket.on('ice-candidate', async ({ candidate, from }) => {
       try {
         if (peerConnectionRef.current && from === peerIdRef.current) {
@@ -174,29 +213,26 @@ export const useVideoCall = (username, preferences) => {
       }
     });
 
-    // Call state changes
     socket.on('call-ended', ({ reason }) => {
       setNotification({ message: `Call ended: ${reason}`, type: 'info' });
       resetCallState();
     });
 
-    
+    socket.on('search-timeout', ({ message }) => {
+      setNotification({ message, type: 'info' });
+      resetCallState(false);
+    });
+
     return () => {
-      socket.off('connect');
-      socket.off('connect_error');
-      socket.off('join-success');
-      socket.off('join-error');
-      socket.off('queue-status');
-      socket.off('peer-found');
-      socket.off('offer');
-      socket.off('answer');
-      socket.off('call-accepted');
-      socket.off('ice-candidate');
-      socket.off('call-ended');
+      socket.disconnect();
+      socket.off();
+      if (peerConnectionRef.current) {
+        peerConnectionRef.current.close();
+        peerConnectionRef.current = null;
+      }
     };
-  }, [username, preferences, createPeerConnection, resetCallState]);
-  
-  // --- User Actions ---
+  }, [createPeerConnection, resetCallState]);
+
   const toggleMic = () => {
     const audioTrack = localStreamRef.current?.getAudioTracks()[0];
     if (audioTrack) {
